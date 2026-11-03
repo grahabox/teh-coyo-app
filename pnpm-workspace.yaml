@@ -1,0 +1,15 @@
+packages:
+  - apps/*
+
+minimumReleaseAgeExclude:
+  - '@vitejs/plugin-react@6.1.2'
+  - vite@8.3.3
+
+allowBuilds:
+  '@nestjs/core': false
+  '@parcel/watcher': true
+  '@prisma/engines': true
+  '@scarf/scarf': false
+  esbuild: true
+  prisma: true
+  unrs-resolver: true

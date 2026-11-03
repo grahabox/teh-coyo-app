@@ -1,0 +1,26 @@
+{
+  "name": "teh-coyo-app",
+  "private": true,
+  "version": "0.1.0",
+  "packageManager": "pnpm@12.6.0",
+  "engines": {
+    "node": ">=24 <27"
+  },
+  "scripts": {
+    "dev": "pnpm --parallel --filter @tehcoyo/api --filter @tehcoyo/web dev",
+    "build": "pnpm --filter @tehcoyo/api db:generate && pnpm -r build",
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm -r test",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "db:generate": "pnpm --filter @tehcoyo/api db:generate",
+    "db:migrate": "pnpm --filter @tehcoyo/api db:migrate",
+    "db:deploy": "pnpm --filter @tehcoyo/api db:deploy",
+    "db:seed": "pnpm --filter @tehcoyo/api db:seed",
+    "db:seed:dummy": "pnpm --filter @tehcoyo/api db:seed:dummy",
+    "test:integration": "pnpm --filter @tehcoyo/api test:integration"
+  },
+  "devDependencies": {
+    "prettier": "^3.6.2"
+  }
+}

@@ -1,0 +1,369 @@
+generator client {
+  provider     = "prisma-client"
+  output       = "../src/generated/prisma"
+  moduleFormat = "cjs"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum LocationType {
+  CENTER
+  DC
+  STAND
+}
+
+enum Ownership {
+  OWNED
+  PARTNER
+}
+
+enum Role {
+  CENTRAL_ADMIN
+  DC_ADMIN
+  STAND_CASHIER
+  PARTNER_ADMIN
+}
+
+enum Dimension {
+  MASS
+  VOLUME
+  COUNT
+}
+
+enum RecipeKind {
+  PRODUCTION
+  SERVING
+}
+
+enum RecipeStatus {
+  DRAFT
+}
+
+model LegalEntity {
+  id        String     @id @default(uuid()) @db.Uuid
+  code      String     @unique
+  name      String
+  createdAt DateTime   @default(now()) @db.Timestamptz(3)
+  locations Location[]
+}
+
+model Location {
+  id        String       @id @default(uuid()) @db.Uuid
+  code      String       @unique
+  name      String
+  type      LocationType
+  ownership Ownership    @default(OWNED)
+  entityId  String       @db.Uuid
+  entity    LegalEntity  @relation(fields: [entityId], references: [id])
+  parentId  String?      @db.Uuid
+  parent    Location?    @relation("LocationTree", fields: [parentId], references: [id])
+  children  Location[]   @relation("LocationTree")
+  users     User[]
+  recipes   Recipe[]
+  purchases Purchase[]
+  stockBalances StockBalance[]
+  stockDocuments StockDocument[] @relation("StockSource")
+  incomingDocuments StockDocument[] @relation("StockDestination")
+  createdAt DateTime     @default(now()) @db.Timestamptz(3)
+
+  @@index([parentId])
+  @@index([entityId])
+}
+
+model User {
+  id           String        @id @default(uuid()) @db.Uuid
+  email        String        @unique
+  name         String
+  passwordHash String
+  role         Role
+  locationId   String?       @db.Uuid
+  location     Location?     @relation(fields: [locationId], references: [id])
+  active       Boolean       @default(true)
+  sessions     AuthSession[]
+  createdAt    DateTime      @default(now()) @db.Timestamptz(3)
+}
+
+model AuthSession {
+  id          String    @id @default(uuid()) @db.Uuid
+  userId      String    @db.Uuid
+  user        User      @relation(fields: [userId], references: [id])
+  refreshHash String    @unique
+  expiresAt   DateTime  @db.Timestamptz(3)
+  revokedAt   DateTime? @db.Timestamptz(3)
+  createdAt   DateTime  @default(now()) @db.Timestamptz(3)
+
+  @@index([userId])
+}
+
+model Unit {
+  id          String      @id @default(uuid()) @db.Uuid
+  code        String      @unique
+  name        String
+  dimension   Dimension
+  factor      Decimal     @db.Decimal(18, 6)
+  stockItems  StockItem[]
+}
+
+model StockItem {
+  id         String            @id @default(uuid()) @db.Uuid
+  code       String            @unique
+  name       String
+  baseUnitId String            @db.Uuid
+  baseUnit   Unit              @relation(fields: [baseUnitId], references: [id])
+  components RecipeComponent[]
+  outputs    Recipe[]
+  stockBalances StockBalance[]
+  stockLines StockDocumentLine[]
+  purchaseLines PurchaseLine[]
+  createdAt  DateTime          @default(now()) @db.Timestamptz(3)
+}
+
+model Menu {
+  id       String        @id @default(uuid()) @db.Uuid
+  name     String        @unique
+  variants MenuVariant[]
+}
+
+model MenuVariant {
+  id        String   @id @default(uuid()) @db.Uuid
+  code      String   @unique
+  name      String
+  menuId    String   @db.Uuid
+  menu      Menu     @relation(fields: [menuId], references: [id])
+  recipes   Recipe[]
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+
+  @@unique([menuId, name])
+}
+
+model Recipe {
+  id                String            @id @default(uuid()) @db.Uuid
+  name              String
+  kind              RecipeKind
+  version           Int               @default(1)
+  status            RecipeStatus      @default(DRAFT)
+  scopeLocationId   String?           @db.Uuid
+  scopeLocation     Location?         @relation(fields: [scopeLocationId], references: [id])
+  outputItemId      String?           @db.Uuid
+  outputItem        StockItem?        @relation(fields: [outputItemId], references: [id])
+  menuVariantId     String?           @db.Uuid
+  menuVariant       MenuVariant?      @relation(fields: [menuVariantId], references: [id])
+  outputQuantity    Decimal           @db.Decimal(18, 6)
+  outputUnitCode    String
+  outputBaseQuantity Decimal          @db.Decimal(18, 6)
+  components        RecipeComponent[]
+  createdBy         String            @db.Uuid
+  createdAt         DateTime          @default(now()) @db.Timestamptz(3)
+
+  @@index([scopeLocationId])
+}
+
+model RecipeComponent {
+  id           String    @id @default(uuid()) @db.Uuid
+  recipeId     String    @db.Uuid
+  recipe       Recipe    @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+  stockItemId  String    @db.Uuid
+  stockItem    StockItem @relation(fields: [stockItemId], references: [id])
+  quantity     Decimal   @db.Decimal(18, 6)
+  unitCode     String
+  baseQuantity Decimal   @db.Decimal(18, 6)
+
+  @@unique([recipeId, stockItemId])
+}
+
+model AuditEvent {
+  id        String   @id @default(uuid()) @db.Uuid
+  actorId   String?  @db.Uuid
+  action    String
+  subjectId String
+  details   Json
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+
+  @@index([subjectId, createdAt])
+}
+
+enum StockDocumentKind {
+  OPENING
+  RECEIPT
+  ADJUSTMENT
+  TRANSFER
+}
+
+enum StockDocumentStatus {
+  DRAFT
+  POSTED
+  SHIPPED
+  RECEIVED
+}
+
+model StockBalance {
+  locationId String @db.Uuid
+  stockItemId String @db.Uuid
+  location Location @relation(fields: [locationId], references: [id])
+  stockItem StockItem @relation(fields: [stockItemId], references: [id])
+  quantity Decimal @default(0) @db.Decimal(18, 6)
+  openingDate DateTime? @db.Date
+  lastMovementDate DateTime? @db.Date
+  movements StockMovement[]
+
+  @@id([locationId, stockItemId])
+}
+
+model StockDocument {
+  id String @id @db.Uuid
+  kind StockDocumentKind
+  status StockDocumentStatus @default(DRAFT)
+  locationId String @db.Uuid
+  location Location @relation("StockSource", fields: [locationId], references: [id])
+  destinationId String? @db.Uuid
+  destination Location? @relation("StockDestination", fields: [destinationId], references: [id], onDelete: Restrict)
+  businessDate DateTime @db.Date
+  reference String
+  reason String
+  supplierName String?
+  requestHash String
+  createdBy String @db.Uuid
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  postedAt DateTime? @db.Timestamptz(3)
+  lines StockDocumentLine[]
+  receipts StockReceiptEvent[]
+  purchaseReceipt PurchaseReceipt?
+
+  @@index([locationId, createdAt])
+  @@index([destinationId, createdAt])
+}
+
+model StockDocumentLine {
+  id String @id @default(uuid()) @db.Uuid
+  documentId String @db.Uuid
+  document StockDocument @relation(fields: [documentId], references: [id])
+  stockItemId String @db.Uuid
+  stockItem StockItem @relation(fields: [stockItemId], references: [id])
+  quantity Decimal @db.Decimal(18, 6)
+  receivedQuantity Decimal @default(0) @db.Decimal(18, 6)
+  movements StockMovement[]
+
+  @@unique([documentId, stockItemId])
+}
+
+model StockReceiptEvent {
+  id String @id @db.Uuid
+  documentId String @db.Uuid
+  document StockDocument @relation(fields: [documentId], references: [id])
+  requestHash String
+  actorId String @db.Uuid
+  businessDate DateTime @db.Date
+  note String
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  movements StockMovement[]
+}
+
+model StockMovement {
+  id String @id @default(uuid()) @db.Uuid
+  sequence Int @unique @default(autoincrement())
+  locationId String @db.Uuid
+  stockItemId String @db.Uuid
+  balance StockBalance @relation(fields: [locationId, stockItemId], references: [locationId, stockItemId])
+  lineId String @db.Uuid
+  line StockDocumentLine @relation(fields: [lineId], references: [id])
+  receiptEventId String? @db.Uuid
+  receiptEvent StockReceiptEvent? @relation(fields: [receiptEventId], references: [id], onDelete: Restrict)
+  kind String
+  quantity Decimal @db.Decimal(18, 6)
+  balanceAfter Decimal @db.Decimal(18, 6)
+  businessDate DateTime @db.Date
+  actorId String @db.Uuid
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+
+  @@index([locationId, stockItemId, createdAt])
+}
+
+model Supplier {
+  id String @id @db.Uuid
+  code String @unique
+  name String
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  purchases Purchase[]
+}
+
+enum PurchaseStatus {
+  DRAFT
+  CONFIRMED
+}
+
+model Purchase {
+  id String @id @db.Uuid
+  locationId String @db.Uuid
+  location Location @relation(fields: [locationId], references: [id])
+  supplierId String @db.Uuid
+  supplier Supplier @relation(fields: [supplierId], references: [id])
+  supplierName String
+  entityId String @db.Uuid
+  ownership Ownership
+  invoiceReference String
+  invoiceKey String
+  businessDate DateTime @db.Date
+  dueDate DateTime? @db.Date
+  note String
+  currency String @default("IDR")
+  totalAmount Decimal @db.Decimal(18, 0)
+  paidAmount Decimal @default(0) @db.Decimal(18, 0)
+  status PurchaseStatus @default(DRAFT)
+  requestHash String
+  createdBy String @db.Uuid
+  confirmedBy String? @db.Uuid
+  confirmedAt DateTime? @db.Timestamptz(3)
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  lines PurchaseLine[]
+  receipts PurchaseReceipt[]
+  payments PurchasePayment[]
+
+  @@unique([supplierId, entityId, invoiceKey])
+  @@index([locationId, createdAt])
+}
+
+model PurchaseLine {
+  id String @id @default(uuid()) @db.Uuid
+  purchaseId String @db.Uuid
+  purchase Purchase @relation(fields: [purchaseId], references: [id])
+  stockItemId String @db.Uuid
+  stockItem StockItem @relation(fields: [stockItemId], references: [id])
+  quantity Decimal @db.Decimal(18, 6)
+  receivedQuantity Decimal @default(0) @db.Decimal(18, 6)
+  unitPrice Decimal @db.Decimal(18, 0)
+  lineAmount Decimal @db.Decimal(18, 0)
+
+  @@unique([purchaseId, stockItemId])
+}
+
+model PurchaseReceipt {
+  id String @id @db.Uuid
+  purchaseId String @db.Uuid
+  purchase Purchase @relation(fields: [purchaseId], references: [id])
+  stockDocumentId String @unique @db.Uuid
+  stockDocument StockDocument @relation(fields: [stockDocumentId], references: [id])
+  requestHash String
+  linkedExisting Boolean @default(false)
+  actorId String @db.Uuid
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+}
+
+model PurchasePayment {
+  id String @id @db.Uuid
+  purchaseId String @db.Uuid
+  purchase Purchase @relation(fields: [purchaseId], references: [id])
+  businessDate DateTime @db.Date
+  amount Decimal @db.Decimal(18, 0)
+  method String
+  fundingSource String
+  reference String
+  referenceKey String
+  note String
+  requestHash String
+  actorId String @db.Uuid
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+
+  @@unique([purchaseId, referenceKey])
+}
